@@ -1,0 +1,65 @@
+{
+  "drafter_cost": 0.1,
+  "tokens_per_target_call": {
+    "naive": 1.0,
+    "speculative_adaptive_k6": 2.47,
+    "speedup": "2.47x"
+  },
+  "adaptive_vs_fixed_sweep": {
+    "p=0.3": {
+      "fixed_k2": 1.158,
+      "fixed_k4": 1.018,
+      "fixed_k8": 0.794,
+      "adaptive_k": 1,
+      "adaptive_gain": 1.182,
+      "best_fixed": 1.158,
+      "adaptive_vs_best_fixed": "+102.0%"
+    },
+    "p=0.5": {
+      "fixed_k2": 1.458,
+      "fixed_k4": 1.384,
+      "fixed_k8": 1.109,
+      "adaptive_k": 2,
+      "adaptive_gain": 1.458,
+      "best_fixed": 1.458,
+      "adaptive_vs_best_fixed": "+100.0%"
+    },
+    "p=0.7": {
+      "fixed_k2": 1.825,
+      "fixed_k4": 1.981,
+      "fixed_k8": 1.777,
+      "adaptive_k": 4,
+      "adaptive_gain": 1.981,
+      "best_fixed": 1.981,
+      "adaptive_vs_best_fixed": "+100.0%"
+    },
+    "p=0.8": {
+      "fixed_k2": 2.033,
+      "fixed_k4": 2.401,
+      "fixed_k8": 2.405,
+      "adaptive_k": 6,
+      "adaptive_gain": 2.47,
+      "best_fixed": 2.405,
+      "adaptive_vs_best_fixed": "+102.7%"
+    },
+    "p=0.9": {
+      "fixed_k2": 2.258,
+      "fixed_k4": 2.925,
+      "fixed_k8": 3.403,
+      "adaptive_k": 8,
+      "adaptive_gain": 3.403,
+      "best_fixed": 3.403,
+      "adaptive_vs_best_fixed": "+100.0%"
+    },
+    "p=0.95": {
+      "fixed_k2": 2.377,
+      "fixed_k4": 3.232,
+      "fixed_k8": 4.108,
+      "adaptive_k": 8,
+      "adaptive_gain": 4.108,
+      "best_fixed": 4.108,
+      "adaptive_vs_best_fixed": "+100.0%"
+    }
+  },
+  "theorem": "greedy verification is distribution-identical to the target model"
+}
