@@ -31,7 +31,11 @@ def greedy_verify(
     correct = draft_tokens == tgt[:-1]
     # accepted prefix length = first False position (or K if all correct)
     if bool(correct.all()):
-        return draft_tokens.clone()
+        # full accept: K drafts + the target's bonus token (tgt[K], the
+        # position after the last draft). Returning only the drafts here
+        # drops one token per fully-accepted round and misreports
+        # `accepted` as K-1 — see the accounting note above.
+        return torch.cat([draft_tokens, tgt[-1:]])
     first_bad = int((~correct).nonzero()[0])
     # draft up to first_bad-1 accepted, then the target's correction token
     return torch.cat([draft_tokens[:first_bad], tgt[first_bad : first_bad + 1]])
@@ -70,6 +74,17 @@ def verify_branch(target_logits: torch.Tensor, draft_tokens: torch.Tensor,
     return bool(ok)
 
 
+# --- emitted-token accounting -------------------------------------------------
+# Greedy verify returns `accepted + 1` tokens in EVERY case: the accepted
+# draft prefix plus exactly one target token — the rejection correction at the
+# first mismatch, or the target's bonus token after a full accept. Dropping
+# that bonus on full accepts (the easy off-by-one) under-counts output by one
+# token per fully-accepted round while the closed form
+# expected_tokens() = 1 + p + ... + p^K still counts it, so every gain
+# receipt overstates throughput and the controller observes `accepted = K-1`
+# on rounds where all K drafts verified.
+
+
 def expected_tokens(p: float, k: int) -> float:
     """E[accepted + 1] tokens per round for acceptance rate p, draft length k."""
     if p >= 1.0:
@@ -88,23 +103,53 @@ def optimal_draft_len(p: float, drafter_cost: float, k_max: int = 8) -> int:
 
 
 class AdaptiveSpeculator:
-    """Tracks observed acceptance; retries with the analytic optimal K."""
+    """Tracks observed acceptance; retries with the analytic optimal K.
+
+    Acceptance is estimated with the censored-geometric MLE, not the naive
+    accepted/drafted ratio: a round that accepts all K drafted tokens is
+    *censored* (the run was cut short by K, not by a failure), so the ratio
+    systematically over- or under-states p depending on K — a full-accept
+    round of K=4 is weak evidence of p≈1, yet the ratio claims exactly 1.0.
+    The MLE below is the fix and it matters most exactly where the ratio is
+    worst: short drafts and full accepts.
+    """
 
     def __init__(self, drafter_cost: float = 0.1, k_max: int = 8, window: int = 8):
         self.drafter_cost = drafter_cost
         self.k_max = k_max
         self.window = window
-        self.history: list[float] = []  # accepted fraction per round
+        self.rounds: list[tuple[int, int]] = []  # (accepted, drafted) per round
+
+    def estimate_p(self) -> float:
+        """Censored-geometric MLE of per-position acceptance over the window.
+
+        Likelihood of one round: q^a(1-q) when a<K (a failure was observed),
+        q^K when a==K (censored). Maximizing the window's log-likelihood:
+
+            q_hat = (A + S) / (A + S + F)
+
+        A = accepted positions in failure rounds, S = drafted positions in
+        fully-accepted (censored) rounds, F = number of failure rounds. The
+        +0.5/+1 is a Jeffreys prior keeping the estimate off the q=1 boundary
+        where a handful of full accepts would otherwise pin K at the maximum.
+        """
+        if not self.rounds:
+            return 0.0
+        accepted_fail = sum(a for a, k in self.rounds if a < k)
+        drafted_full = sum(k for a, k in self.rounds if a == k)
+        failures = sum(1 for a, k in self.rounds if a < k)
+        num = accepted_fail + drafted_full + 0.5
+        den = accepted_fail + drafted_full + failures + 1.0
+        return min(1.0, max(0.0, num / den))
 
     def next_k(self) -> int:
-        if len(self.history) < 2:
+        if len(self.rounds) < 2:
             return 2  # conservative start
-        p = sum(self.history) / len(self.history)
-        return optimal_draft_len(p, self.drafter_cost, self.k_max)
+        return optimal_draft_len(self.estimate_p(), self.drafter_cost, self.k_max)
 
     def observe(self, accepted: int, drafted: int) -> None:
-        self.history.append(accepted / max(1, drafted))
-        self.history = self.history[-self.window :]
+        self.rounds.append((accepted, drafted))
+        self.rounds = self.rounds[-self.window :]
 
 
 def adaptive_speculative_generate(

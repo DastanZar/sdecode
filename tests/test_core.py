@@ -48,7 +48,9 @@ def test_greedy_verify_full_accept():
     logits[1, 6] = 1
     logits[2, 8] = 1
     out = greedy_verify(logits, torch.tensor([4, 6]))
-    assert out.tolist() == [4, 6]
+    # both drafts verify, so the round also emits the target's bonus token
+    # at position K — accepted + 1, as expected_tokens() assumes
+    assert out.tolist() == [4, 6, 8]
 
 
 def test_output_identical_to_target_greedy():
@@ -97,6 +99,46 @@ def test_adaptive_controller_converges_to_optimal():
     for _ in range(10):
         ctrl.observe(0, 4)
     assert ctrl.next_k() <= 2
+
+
+def test_full_accept_emits_target_bonus_token():
+    """A fully-accepted round must emit K drafts plus the target's bonus
+    token (accepted + 1), matching expected_tokens() = 1 + p + ... + p^K.
+
+    Regression: greedy_verify returned only the K drafts on full accept, so
+    output was one token short per fully-accepted round while the closed form
+    counted it, and observe() saw accepted=K-1 on rounds where all K drafts
+    verified — corrupting both the receipts and the controller's estimate.
+    """
+    K, V, tok = 3, 6, 4
+    tgt_logits = torch.full((K + 1, V), -10.0)
+    for i in range(K + 1):
+        tgt_logits[i, tok] = 1.0  # target's greedy continuation is `tok`
+    draft = torch.full((K,), tok, dtype=torch.long)
+    out = greedy_verify(tgt_logits, draft)
+    assert out.tolist() == [tok] * (K + 1)  # K drafts + bonus
+    # partial accept still stops at the mismatch with exactly one correction
+    draft2 = torch.tensor([tok, tok, 1])
+    out2 = greedy_verify(tgt_logits, draft2)
+    assert out2.tolist() == [tok, tok, tok]
+
+
+def test_acceptance_estimate_is_censored_mle():
+    """estimate_p must not pin to the q=1 boundary on censored rounds: a
+    window of full accepts is evidence for high p, not proof of p=1 — the
+    naive accepted/drafted ratio claims exactly 1.0 there and locks K at the
+    maximum no matter how few rounds were seen."""
+    ctrl = AdaptiveSpeculator(drafter_cost=0.1)
+    for _ in range(8):
+        ctrl.observe(4, 4)  # all drafts verified — censored
+    p_full = ctrl.estimate_p()
+    assert 0.0 < p_full < 1.0
+    assert ctrl.next_k() >= 3  # high acceptance still picks a deep draft
+    # failure evidence pulls the estimate down, fast
+    for _ in range(8):
+        ctrl.observe(0, 4)
+    p_zero = ctrl.estimate_p()
+    assert p_zero < 0.2
 
 
 def test_spec_beats_naive_on_tokens_per_target_call():

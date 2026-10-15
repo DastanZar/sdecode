@@ -1,0 +1,179 @@
+{
+  "config": {
+    "vocab": 24,
+    "c": 0.1,
+    "budget": 60,
+    "price_base": 2,
+    "prompt": [
+      1,
+      2,
+      3
+    ],
+    "seeds": 50
+  },
+  "generated_by": "app/session_receipt.js (node) — same sim as app/session.html",
+  "workload_note": "synthetic i.i.d. Bernoulli(q) verification (prefix-independent target); the closed form is predictive in this regime by construction. Numbers are means over SEEDS sessions; steady state = last 20 rounds of each 60-round session (controller warm-up flushed).",
+  "pricing_note": "usd_per_mtok = tok_per_unit * price_base, naive-equivalent pricing",
+  "scenarios": [
+    {
+      "q": 0.3,
+      "naive": {
+        "tok_per_unit": 1,
+        "tok_per_unit_sd": 0,
+        "usd_per_mtok": 2,
+        "tokens": 30,
+        "measured_p": null,
+        "settled_k": 0
+      },
+      "fixed_k8": {
+        "tok_per_unit": 0.8037,
+        "tok_per_unit_sd": 0.0808,
+        "usd_per_mtok": 1.6074,
+        "tokens": 43,
+        "measured_p": 0.3118,
+        "settled_k": 8
+      },
+      "adaptive": {
+        "tok_per_unit": 1.186,
+        "tok_per_unit_sd": 0.074,
+        "usd_per_mtok": 2.3719,
+        "tokens": 41,
+        "measured_p": 0.3146,
+        "settled_k": 1.34
+      }
+    },
+    {
+      "q": 0.5,
+      "naive": {
+        "tok_per_unit": 1,
+        "tok_per_unit_sd": 0,
+        "usd_per_mtok": 2,
+        "tokens": 30,
+        "measured_p": null,
+        "settled_k": 0
+      },
+      "fixed_k8": {
+        "tok_per_unit": 1.083,
+        "tok_per_unit_sd": 0.1126,
+        "usd_per_mtok": 2.1659,
+        "tokens": 58,
+        "measured_p": 0.4918,
+        "settled_k": 8
+      },
+      "adaptive": {
+        "tok_per_unit": 1.4073,
+        "tok_per_unit_sd": 0.1113,
+        "usd_per_mtok": 2.8146,
+        "tokens": 52,
+        "measured_p": 0.4982,
+        "settled_k": 2.24
+      }
+    },
+    {
+      "q": 0.7,
+      "naive": {
+        "tok_per_unit": 1,
+        "tok_per_unit_sd": 0,
+        "usd_per_mtok": 2,
+        "tokens": 30,
+        "measured_p": null,
+        "settled_k": 0
+      },
+      "fixed_k8": {
+        "tok_per_unit": 1.743,
+        "tok_per_unit_sd": 0.2233,
+        "usd_per_mtok": 3.4859,
+        "tokens": 94,
+        "measured_p": 0.6972,
+        "settled_k": 8
+      },
+      "adaptive": {
+        "tok_per_unit": 1.9036,
+        "tok_per_unit_sd": 0.1848,
+        "usd_per_mtok": 3.8072,
+        "tokens": 79,
+        "measured_p": 0.6931,
+        "settled_k": 4.06
+      }
+    },
+    {
+      "q": 0.85,
+      "naive": {
+        "tok_per_unit": 1,
+        "tok_per_unit_sd": 0,
+        "usd_per_mtok": 2,
+        "tokens": 30,
+        "measured_p": null,
+        "settled_k": 0
+      },
+      "fixed_k8": {
+        "tok_per_unit": 2.8359,
+        "tok_per_unit_sd": 0.3192,
+        "usd_per_mtok": 5.6718,
+        "tokens": 153,
+        "measured_p": 0.8486,
+        "settled_k": 8
+      },
+      "adaptive": {
+        "tok_per_unit": 2.7785,
+        "tok_per_unit_sd": 0.2876,
+        "usd_per_mtok": 5.5571,
+        "tokens": 138,
+        "measured_p": 0.8466,
+        "settled_k": 6.58
+      }
+    },
+    {
+      "q": 0.95,
+      "naive": {
+        "tok_per_unit": 1,
+        "tok_per_unit_sd": 0,
+        "usd_per_mtok": 2,
+        "tokens": 30,
+        "measured_p": null,
+        "settled_k": 0
+      },
+      "fixed_k8": {
+        "tok_per_unit": 4.1241,
+        "tok_per_unit_sd": 0.2098,
+        "usd_per_mtok": 8.2481,
+        "tokens": 223,
+        "measured_p": 0.9495,
+        "settled_k": 8
+      },
+      "adaptive": {
+        "tok_per_unit": 4.0832,
+        "tok_per_unit_sd": 0.2767,
+        "usd_per_mtok": 8.1663,
+        "tokens": 220,
+        "measured_p": 0.9496,
+        "settled_k": 7.96
+      }
+    }
+  ],
+  "regime_drift": {
+    "config": {
+      "vocab": 24,
+      "c": 0.1,
+      "budget": 60,
+      "price_base": 2,
+      "prompt": [
+        1,
+        2,
+        3
+      ],
+      "q": {
+        "before": 0.3,
+        "after": 0.9,
+        "at": 30
+      },
+      "seeds": 9
+    },
+    "note": "q steps 0.30 -> 0.90 at round 30; adaptive K must follow, then win on cost",
+    "mean_k_before": 1.46,
+    "mean_k_after": 6.67,
+    "settled_k": 8,
+    "steady_tok_per_unit_adaptive": 3.3755,
+    "steady_tok_per_unit_k8": 3.2675
+  }
+}
