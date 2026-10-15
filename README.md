@@ -2,67 +2,92 @@
 
 ![ci](https://github.com/DastanZar/sdecode/actions/workflows/acceptance.yml/badge.svg)
 
-## The one line of math that most speculative-decoding setups skip
+Speculative decoding ships a draft length someone chose once, on a machine that
+isn't yours. `sdecode` measures the acceptance rate you're actually getting and
+re-answers the question every round — with a closed form, not a search.
 
-Everybody knows the trick: draft K tokens with a tiny model, have the real
-model verify them in one pass, accept the correct prefix. What ships is a
-**hard-coded K=8** (or 4, or "tuned once"). But the payoff is a closed-form
-function of two quantities you *observe continuously*:
+**[Open the live tuner →](app/tuner.html)** — drag your measured acceptance and
+drafter cost, watch the answer move. Same math as
+`sdecode.core.optimal_draft_len`, ported line-for-line.
+
+---
+
+## The default is a bet, and it can lose to doing nothing
+
+A drafter proposes K tokens, the target model verifies them in one pass, the
+matching prefix survives. Everyone ships K=8. But the value of K=8 depends on
+your acceptance rate — and below about **p ≈ 0.45**, hard-coded K=8 returns
+*fewer tokens per unit cost than simply not speculating*:
+
+![crossover envelope](assets/crossover.png)
+
+That shaded region isn't a slowdown you tolerate; it's the default losing to
+naive decoding. At p=0.3 the receipt measures K=8 at **0.794 tok/unit** while
+not speculating gives 1.0. The adaptive line never dips below the floor — it
+answers K=1 there and takes the win.
+
+## What the controller decides
+
+One argmax over integers, fed by an 8-round window of observed acceptance.
+No training, no bandit, no tuning knob — the objective is closed-form:
 
 ```
-tokens per round:  E(K, p) = (1 − p^(K+1)) / (1 − p)        p = acceptance rate
-cost per round:    1 + c·K                                    c = drafter/target cost
+E(K, p) = (1 − p^(K+1)) / (1 − p)        expected accepted run
+gain     = E(K, p) / (1 + c·K)            c = drafter/target cost ratio
+K*       = argmax over integer K ∈ [1, 8]
 ```
 
-Maximize `E/(1+cK)` over integer K and you get the optimal draft length. At
-p=0.3 and c=0.1 the optimum is **K=1** — a fixed K=8 setup there isn't slow,
-it's *actively wasting 8 draft passes per round* and paying verification for
-tokens it knows will bounce.
+![K decision staircase](assets/k_decision.png)
 
-![gain surface](assets/gain_surface.png)
+## One session, watched
 
-The white line is `sdecode`'s controller: a 8-round acceptance window feeds
-the analytic argmax. No training, no bandit, no hyperparameter.
+Twelve rounds through a toy LM where the drafter tracks the target closely but
+not perfectly. Green chips are accepted draft tokens, amber are rejected. Same
+target-model calls on both lanes:
 
-## Measured, not just plotted
+![rounds](assets/rounds.gif)
 
-`demos/demo.py` runs the analytic sweep and pins it:
+## Receipts
 
-| p | best fixed K∈{2,4,8} | adaptive K | adaptive vs best-fixed |
-|---|---|---|---|
-| 0.3 | 0.60 | 1 → **0.87** | **+45%** |
-| 0.5 | 0.86 | 2 → **0.94** | +9% |
-| 0.8 | 1.51 | 6 → **1.53** | +1.4% |
-| 0.9 | 2.20 | 8 → **2.47** | +12% |
+`python demos/demo.py` writes `receipts/receipt.json` — every number below
+comes from it, measured, reproducible:
 
-At p=0.8, c=0.1 the whole scheme emits **2.47 tokens per target-model call**
-where naive decoding gives 1.0. And a live session's timeline (from a toy LM
-where drafter≈target but not equal) shows the controller finding its level:
+| acceptance p | controller picks | adaptive tok/unit | fixed K=8 | adaptive vs K=8 |
+|---|---|---|---|---|
+| 0.30 | K=1 | 1.182 | 0.794 | **+48.9%** |
+| 0.50 | K=2 | 1.458 | 1.109 | **+31.5%** |
+| 0.70 | K=4 | 1.981 | 1.777 | **+11.5%** |
+| 0.80 | K=6 | 2.470 | 2.405 | +2.7% |
+| 0.90 | K=8 | 3.403 | 3.403 | +0.0% |
+| 0.95 | K=8 | 4.108 | 4.108 | +0.0% |
 
-![timeline](assets/acceptance_timeline.png)
+At p=0.8, c=0.1: **2.47 tokens per target-model call** against naive's 1.0 —
+and the same sweep shows the adaptive choice never trailing the best fixed
+candidate from {2, 4, 8} (it ties where the fixed set already contains the
+optimum, and picks values the set can't express).
 
-## The theorem you actually care about
+## The property everything rests on
 
-Speculative decoding only wins if it's *exact*: the output distribution must
-equal the target model's, or you've built a quantizer and a speedup at the
-same time. Greedy verification is provably distribution-identical, and the
-test suite checks it empirically — same seed, naive greedy vs speculative:
-token-for-token equal (`test_output_identical_to_target_greedy`).
+A speedup that changes your output distribution isn't a speedup, it's a
+quantizer wearing a benchmark's hat. Greedy verification is provably
+distribution-identical to the target model, and the suite pins it empirically:
+same seed, naive greedy vs speculative, token-for-token equality
+(`test_output_identical_to_target_greedy`).
 
-The animated version of the whole point:
-
-![race](assets/spec_race.gif)
-
-## Install
+## Try it
 
 ```bash
 pip install -e ".[dev]"
 pytest -q              # 7 tests: formula, controller convergence, identity
-python demos/demo.py   # receipts + figures
+python demos/demo.py   # receipt + figures
+python demos/make_figures.py
 ```
 
-Prior art: Leviathan et al., *Fast Inference from Transformers via Speculative
-Decoding* (ICML 2023); Chen et al. (2023) — the acceptance criterion and
-corrected-distribution sampling are theirs; the adaptive-K controller and its
-closed-form derivation here are the delta, and it's 20 lines because the math
-was already complete.
+## Prior art
+
+The acceptance criterion and corrected-distribution sampling are Leviathan et
+al. ([arXiv:2211.17192](https://arxiv.org/abs/2211.17192), ICML 2023) and Chen
+et al. ([arXiv:2302.01318](https://arxiv.org/abs/2302.01318)). This repo is
+built on that; the delta is the adaptive-K controller, its break-even analysis
+against naive decoding, and the measurement apparatus around both — the math
+was already complete, the packaging of the decision is the work here.

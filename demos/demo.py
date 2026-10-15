@@ -3,8 +3,6 @@ import json
 import os
 import sys
 
-import torch
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdecode.core import expected_tokens, optimal_draft_len  # noqa: E402
 
@@ -26,7 +24,15 @@ for p in (0.3, 0.5, 0.7, 0.8, 0.9, 0.95):
         "adaptive_k": k_star,
         "adaptive_gain": round(adapt, 3),
         "best_fixed": round(max(fixed.values()), 3),
-        "adaptive_vs_best_fixed": f"{adapt / max(fixed.values()):+.1%}",
+        # delta over the best fixed candidate, not the raw ratio:
+        # ratio 1.027 must print "+2.7%", never "+102.7%"
+        "adaptive_gain_vs_best_fixed": f"{(adapt / max(fixed.values()) - 1):+.1%}",
+        # the comparison that matters: adaptive vs the customary fixed K=8
+        # (at low p this is where a hard-coded K=8 goes BELOW naive speed)
+        "adaptive_gain_vs_fixed_k8": f"{(adapt / fixed[8] - 1):+.1%}",
+        # tokens/unit of the customary fixed K=8 vs naive decoding (1.0):
+        # below 1.0 means the hard-coded K is SLOWER than not speculating
+        "fixed_k8_tokens_per_unit": round(fixed[8], 3),
     }
 
 # ---- 2) naive vs speculative tokens-per-target-call at p=0.8 --------------

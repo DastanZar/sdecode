@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sdecode — draft-length tuner</title>
+<style>
+  :root {
+    --fg: var(--foreground, #16213c);
+    --muted: var(--muted-foreground, #64748b);
+    --line: var(--border, #cbd5e1);
+    --card: var(--card, #ffffff);
+    --accent: #4f46e5;
+    --amber: #f59e0b;
+    --teal: #14b8a6;
+    --gray: #94a3b8;
+    --danger: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--card);
+  }
+  .wrap { max-width: 720px; padding: 20px 16px 28px; }
+  h1 { font-size: 17px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  .ctl { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .ctl label { display: flex; justify-content: space-between; font-size: 12.5px;
+    color: var(--muted); margin-bottom: 8px; }
+  .ctl label b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .out { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-top: 14px; }
+  .headline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .kbig { font-size: 44px; font-weight: 700; color: var(--accent);
+    font-variant-numeric: tabular-nums; line-height: 1; }
+  .klabel { color: var(--muted); font-size: 12.5px; }
+  .compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .cell { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
+  .cell .t { font-size: 11.5px; color: var(--muted); }
+  .cell .v { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .cell.adaptive .v { color: var(--accent); }
+  .cell.k8 .v { color: var(--amber); }
+  .cell.naive .v { color: var(--gray); }
+  .verdict { margin-top: 12px; font-size: 13px; border-radius: 8px; padding: 9px 12px;
+    border: 1px solid var(--line); }
+  .verdict.bad { background: var(--danger); border-color: #fca5a5; }
+  .bars { margin-top: 16px; }
+  .bars .row { display: grid; grid-template-columns: 54px 1fr 74px; gap: 10px;
+    align-items: center; margin-bottom: 5px; font-size: 12px; }
+  .bars .name { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .track { background: #f1f5f9; border-radius: 5px; height: 16px; position: relative; }
+  .fill { height: 100%; border-radius: 5px; background: var(--gray); transition: width .12s; }
+  .fill.best { background: var(--accent); }
+  .fill.k8fill { background: var(--amber); }
+  .naiveline { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #334155; }
+  .num { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .foot { margin-top: 14px; font-size: 11.5px; color: var(--muted); }
+  code { font: 12px ui-monospace, "SF Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>sdecode — draft-length tuner</h1>
+  <p class="sub">Pick the draft length K from the acceptance you actually measure.
+     Same closed-form as <code>sdecode.core.optimal_draft_len</code>, running live in your browser.</p>
+
+  <div class="grid">
+    <div class="ctl">
+      <label>acceptance rate <b id="pv">0.80</b></label>
+      <input id="p" type="range" min="0.05" max="0.98" step="0.01" value="0.80">
+    </div>
+    <div class="ctl">
+      <label>drafter cost c <b id="cv">0.10</b></label>
+      <input id="c" type="range" min="0.02" max="0.60" step="0.01" value="0.10">
+    </div>
+  </div>
+
+  <div class="out">
+    <div class="headline">
+      <span class="kbig" id="kstar">6</span>
+      <span class="klabel">tokens the drafter should propose this round</span>
+    </div>
+    <div class="compare">
+      <div class="cell adaptive"><div class="t">adaptive K</div><div class="v" id="gAd">2.470</div></div>
+      <div class="cell k8"><div class="t">fixed K=8</div><div class="v" id="gK8">2.405</div></div>
+      <div class="cell naive"><div class="t">naive decode</div><div class="v">1.000</div></div>
+    </div>
+    <div class="verdict" id="verdict"></div>
+    <div class="bars" id="bars"></div>
+    <div class="foot">tokens per unit cost = (1 − p<sup>K+1</sup>) / ((1 − p) · (1 + c·K)) —
+      the closed form from Leviathan et al. 2023, maximized over integer K.</div>
+  </div>
+</div>
+
+<script>
+const E = (p, k) => p >= 1 ? k + 1 : (1 - Math.pow(p, k + 1)) / (1 - p);
+const gain = (p, k, c) => E(p, k) / (1 + c * k);
+function optimalK(p, c, kMax = 8) {
+  let bestK = 1, bestG = 0;
+  for (let k = 1; k <= kMax; k++) {
+    const g = gain(p, k, c);
+    if (g > bestG) { bestG = g; bestK = k; }
+  }
+  return bestK;
+}
+
+const $ = id => document.getElementById(id);
+const barsEl = $("bars");
+
+function render() {
+  const p = +$("p").value, c = +$("c").value;
+  $("pv").textContent = p.toFixed(2);
+  $("cv").textContent = c.toFixed(2);
+
+  const kStar = optimalK(p, c);
+  const gAd = gain(p, kStar, c);
+  const gK8 = gain(p, 8, c);
+  $("kstar").textContent = kStar;
+  $("gAd").textContent = gAd.toFixed(3);
+  $("gK8").textContent = gK8.toFixed(3);
+
+  // verdict: does the customary K=8 actually hurt here?
+  const v = $("verdict");
+  if (gK8 < 1.0) {
+    v.className = "verdict bad";
+    v.textContent = `At p=${p.toFixed(2)}, fixed K=8 yields ${gK8.toFixed(3)} tok/unit — ` +
+      `SLOWER than not speculating at all. Adaptive K=${kStar} keeps ${gAd.toFixed(3)}.`;
+  } else if (kStar !== 8) {
+    v.className = "verdict";
+    v.textContent = `K=8 leaves ${(gAd / gK8 - 1) * 100 > 0 ? "+" + ((gAd / gK8 - 1) * 100).toFixed(1) : ((gAd / gK8 - 1) * 100).toFixed(1) + "%"} ` +
+      `on the table here — the controller picks K=${kStar}.`;
+  } else {
+    v.className = "verdict";
+    v.textContent = `High acceptance: K=8 is already the optimum at this p and c.`;
+  }
+
+  // per-K bars: K=1..8, best highlighted, naive=1.0 marked
+  const gains = [];
+  for (let k = 1; k <= 8; k++) gains.push(gain(p, k, c));
+  const scale = Math.max(...gains, 1.05);
+  barsEl.innerHTML = "";
+  for (let k = 1; k <= 8; k++) {
+    const g = gains[k - 1];
+    const row = document.createElement("div");
+    row.className = "row";
+    const cls = k === kStar ? "fill best" : (k === 8 ? "fill k8fill" : "fill");
+    row.innerHTML =
+      `<span class="name">K=${k}</span>` +
+      `<span class="track"><span class="${cls}" style="width:${(g / scale * 100).toFixed(1)}%"></span>` +
+      `<span class="naiveline" style="left:${(1.0 / scale * 100).toFixed(1)}%"></span></span>` +
+      `<span class="num">${g.toFixed(3)}</span>`;
+    barsEl.appendChild(row);
+  }
+}
+
+$("p").addEventListener("input", render);
+$("c").addEventListener("input", render);
+render();
+</script>
+</body>
+</html>
