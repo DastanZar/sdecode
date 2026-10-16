@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>sdecode - session</title>
+  <script src="real_run_data.js"></script>
+  <style>
+    :root { --bg:#0b0f14; --card:#11161d; --border:#222c36; --accent:#C4F03C; --muted:#9ca3af; --text:#e8ecef; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:15px/1.55 system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:24px 32px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    h1 { margin:0; font-size:20px; letter-spacing:.2px; }
+    h1 span { color:var(--accent); }
+    .tabs { display:flex; gap:8px; }
+    .tab { padding:8px 16px; border:1px solid var(--border); border-radius:999px; background:transparent; color:var(--muted); cursor:pointer; font:inherit; }
+    .tab.active { background:var(--accent); color:#111; border-color:var(--accent); font-weight:700; }
+    main { max-width:1100px; margin:0 auto; padding:28px 24px; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:18px; }
+    .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+    label { font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
+    select,input { width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:#0d1218; color:var(--text); font:inherit; }
+    .metric { font-size:26px; font-weight:700; color:var(--accent); }
+    .muted { color:var(--muted); font-size:13px; }
+    .hero { font-size:18px; }
+    .play { margin-top:10px; padding:9px 16px; background:var(--accent); color:#111; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
+    .barwrap { height:10px; background:#0d1218; border-radius:999px; overflow:hidden; border:1px solid var(--border); }
+    .bar { height:100%; width:0%; background:var(--accent); transition:width .35s; }
+    pre { background:#0d1218; border:1px solid var(--border); border-radius:12px; padding:14px; overflow:auto; white-space:pre-wrap; max-height:260px; }
+    .notice { border-left:3px solid var(--accent); padding:10px 14px; background:#10170f; border-radius:8px; }
+    footer { text-align:center; padding:24px; color:var(--muted); font-size:12px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>sdecode <span>session</span></h1>
+  <div class="tabs">
+    <button class="tab active" data-view="recorded">Recorded run</button>
+    <button class="tab" data-view="live">Live session (experimental)</button>
+  </div>
+</header>
+<main>
+  <section class="panel active" id="view-recorded">
+    <div class="card">
+      <div class="hero">Playback of the measured real run on GPT-2 / GPT-2-medium.</div>
+      <div class="muted">Token-for-token identical to the naive target-model lane.</div>
+      <div class="row" style="margin-top:14px;">
+        <div><label>Pair</label><select id="pairSel"></select></div>
+        <div><label>Prompt</label><select id="promptSel"></select></div>
+        <div><label>Lane</label><select id="laneSel"></select></div>
+      </div>
+      <div class="row" style="margin-top:16px;">
+        <div><div class="muted">tokens / target call</div><div class="metric" id="mTokCall">-</div></div>
+        <div><div class="muted">target calls</div><div class="metric" id="mCalls">-</div></div>
+        <div><div class="muted">wall time (s)</div><div class="metric" id="mWall">-</div></div>
+        <div><div class="muted">matches naive</div><div class="metric" id="mMatch">-</div></div>
+      </div>
+      <div style="margin-top:16px;"><label>Playback progress</label><div class="barwrap"><div class="bar" id="bar"></div></div></div>
+      <button class="play" id="playBtn">Play recorded run</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">Generated text</h3>
+      <pre id="genText"></pre>
+    </div>
+  </section>
+
+  <section class="panel" id="view-live">
+    <div class="card">
+      <div class="notice">Experimental. Runs the analytic speculative-decoding controller in the browser? Not in this build - this panel documents the live lane and exposes the measured controller. WebGPU live decode is a follow-up.</div>
+      <div class="row" style="margin-top:14px;">
+        <div><label>Initial K</label><input id="initK" type="number" value="2" min="1" max="8"></div>
+        <div><label>Drafter cost c</label><input id="costC" type="number" value="0.2" step="0.05" min="0.01" max="1"></div>
+        <div><label>Acceptance p</label><input id="accP" type="number" value="0.8" step="0.05" min="0" max="1"></div>
+        <div><label>Optimal K</label><input id="optK" type="number" readonly></div>
+      </div>
+      <button class="play" id="calcBtn">Compute optimal K</button>
+      <p class="muted" style="margin-top:10px;">Uses the closed form E(K,p)=(1-p^(K+1))/(1-p) maximized over 1..8 (same controller as the measured run).</p>
+    </div>
+  </section>
+</main>
+<footer>MIT - sdecode - measured on CPU, HF models.</footer>
+<script>
+const DATA = (window.REAL_RUN_DATA || {pairs:[]});
+const pairSel = document.getElementById('pairSel');
+const promptSel = document.getElementById('promptSel');
+const laneSel = document.getElementById('laneSel');
+function fillSelects() {
+  pairSel.innerHTML = DATA.pairs.map((p,i)=>`<option value="${i}">${p.pair}</option>`).join('');
+  rebuildPrompts();
+}
+function rebuildPrompts() {
+  const p = DATA.pairs[pairSel.value];
+  const prompts = p.prompts || [];
+  promptSel.innerHTML = prompts.map((t,i)=>`<option value="${i}">${t.slice(0,40)}</option>`).join('');
+  rebuildLanes();
+}
+function rebuildLanes() {
+  const p = DATA.pairs[pairSel.value];
+  const runs = p.runs.filter(r => r.prompt === p.prompts[promptSel.value]);
+  const seen = [];
+  runs.forEach(r=>{ if(!seen.includes(r.lane)) seen.push(r.lane); });
+  laneSel.innerHTML = seen.map(l=>`<option value="${l}">${l}</option>`).join('');
+  updateMetrics();
+}
+function selectedRun() {
+  const p = DATA.pairs[pairSel.value];
+  const prompt = p.prompts[promptSel.value];
+  const lane = laneSel.value;
+  return p.runs.find(r=> r.prompt===prompt && r.lane===lane);
+}
+function updateMetrics() {
+  const r = selectedRun();
+  if(!r) return;
+  document.getElementById('mTokCall').textContent = r.tokens_per_target_call;
+  document.getElementById('mCalls').textContent = r.target_calls;
+  document.getElementById('mWall').textContent = r.wall_time_s;
+  document.getElementById('mMatch').textContent = r.matches_reference ? 'yes' : 'no';
+  document.getElementById('genText').textContent = r.generated_text;
+}
+pairSel.addEventListener('change',()=>{ rebuildPrompts(); });
+promptSel.addEventListener('change',()=>{ rebuildLanes(); });
+laneSel.addEventListener('change', updateMetrics);
+fillSelects();
+
+document.getElementById('playBtn').addEventListener('click',()=>{
+  const bar=document.getElementById('bar');
+  let v=0;
+  const iv=setInterval(()=>{ v=Math.min(100,v+6); bar.style.width=v+'%'; if(v>=100) clearInterval(iv); }, 120);
+});
+
+// live panel calc
+function optimalK(p,c,kmax=8){
+  let bestK=1,best=0;
+  for(let k=1;k<=kmax;k++){
+    let E = p>=1? k+1 : (1-Math.pow(p,k+1))/(1-p);
+    let g = E/(1+c*k);
+    if(g>best){ best=g; bestK=k; }
+  }
+  return bestK;
+}
+document.getElementById('calcBtn').addEventListener('click',()=>{
+  const p=parseFloat(document.getElementById('accP').value);
+  const c=parseFloat(document.getElementById('costC').value);
+  document.getElementById('optK').value = optimalK(p,c);
+});
+
+// view toggle
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const v=btn.dataset.view;
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    document.getElementById('view-'+v).classList.add('active');
+  });
+});
+updateMetrics();
+</script>
+</body>
+</html>

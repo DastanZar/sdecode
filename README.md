@@ -57,8 +57,13 @@ The animated version of the whole point:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q              # 7 tests: formula, controller convergence, identity
-python demos/demo.py   # receipts + figures
+pytest -q              # 9 tests: formula, controller convergence, identity, real receipts
+python demos/demo.py   # receipts + figures (analytic)
+python demos/real_run.py          # HF GPT-2 / GPT-2-medium speculative runs -> receipts/real_run.json
+python demos/make_real_figures.py  # assets/real_film.gif, assets/real_ledger.png, app/real_run_data.js
+```
+
+Open `app/session.html` for the two-pane recorded/live session view.
 ```
 
 Prior art: Leviathan et al., *Fast Inference from Transformers via Speculative
