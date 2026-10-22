@@ -98,6 +98,43 @@ regression tests (`test_full_accept_emits_target_bonus_token`,
 `test_acceptance_estimate_is_censored_mle`) and the estimate is the
 censored-geometric MLE.
 
+## On real weights, with real clocks
+
+Everything above is theory and simulation. This is the shipped code running two
+real GPT-2-family models on the 4-vCPU box it was built on — 48 tokens per
+lane, every lane checked token-for-token against plain greedy decoding:
+
+![the decode, watched](assets/real_film.gif)
+
+| target ← drafter (c measured) | prompt | naive | adaptive | fixed K=8 |
+|---|---|---|---|---|
+| gpt2-medium ← distilgpt2 (0.24) | prose | 525.4 | **398.5** | 653.1 |
+| | code | 1067.8 | **394.6** | 372.4 |
+| | repeat | 369.6 | **185.9** | 185.3 |
+| gpt2 ← distilgpt2 (0.63) | prose | 182.7 | 190.6 | 449.8 |
+| | code | 403.7 | **288.8** | 301.8 |
+| | repeat | 177.4 | **142.9** | 195.8 |
+
+ms per token, CPU, no GPU anywhere. Two things worth reading twice:
+
+- **On prose with the realistic ratio, fixed K=8 spends 653 ms/token where
+  naive decoding spends 525** — the default loses to not speculating, for real,
+  not just in the model. The controller had already cut K to 1 there.
+- The drafter's cost ratio is *measured*, not assumed: `measure_drafter_cost`
+  times both models, then the controller optimises against that number. The
+  shipped default c=0.1 assumes a drafter ~10× cheaper than the target; on CPU
+  it measures 0.24–0.63, and pretending otherwise over-drafts.
+
+The same ledger in picture form, measured c annotated per pair:
+
+![real ledger](assets/real_ledger.png)
+
+Honest bounds: single run per lane on a shared box, no KV-cache reuse (both
+lanes re-forward the prefix, so the comparison is cost-structure-fair but not
+absolute); the call-counts are exact, wall-clock is indicative.
+`receipts/real_run.json` carries the full trace — every round's drafted and
+emitted tokens, and the identity check per lane.
+
 ## The property everything rests on
 
 A speedup that changes your output distribution isn't a speedup, it's a
@@ -109,12 +146,16 @@ same seed, naive greedy vs speculative, token-for-token equality
 ## Try it
 
 ```bash
-pip install -e ".[dev]"
-pytest -q              # 9 tests: formula, controller, bonus token, MLE, identity
-python demos/demo.py   # receipt + figures
-python demos/make_figures.py
-node app/session_receipt.js   # session ledger (receipts/session.json)
+pip install -e ".[dev,real]"
+pytest -q                         # 11 tests: formula, controller, bonus token, MLE, identity, batched≡reference
+python demos/demo.py              # analytic receipt + figures
+python demos/real_run.py          # real GPT-2 pairs -> receipts/real_run.json
+python demos/make_real_figures.py # film + real ledger + app data
+node app/session_receipt.js       # session-sim ledger -> receipts/session.json
 ```
+
+Open `app/session.html` for the recorded-run playback and the what-if
+simulator; `app/tuner.html` is the closed-form calculator.
 
 ## Prior art
 
